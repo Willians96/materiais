@@ -13,10 +13,12 @@ export default defineSchema({
     createdAt: v.number(),
     // Novos campos
     lastLogin: v.optional(v.number()), // Timestamp do último login
-    loginCount: v.number(),            // Contador de logins (default 0 via código)
+    loginCount: v.optional(v.number()), // Contador de logins (default 0 via código)
+    clerkUserId: v.optional(v.string()), // ID do usuário no Clerk
   })
     .index("by_email", ["email"])
-    .index("by_approved", ["approved"]),
+    .index("by_approved", ["approved"])
+    .index("by_clerkUserId", ["clerkUserId"]),
 
   materials: defineTable({
     patrimonio: v.string(),

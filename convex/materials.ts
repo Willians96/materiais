@@ -118,7 +118,7 @@ export const create = mutation({
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
-      observacoes: observacoes ?? null,
+      observacoes: observacoes ?? undefined,
     });
 
     await saveAuditLog(ctx, {

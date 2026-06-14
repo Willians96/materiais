@@ -16,7 +16,7 @@ import ExportPage from "./pages/ExportPage";
 import MovimentacoesPage from "./pages/MovimentacoesPage";
 
 // Clerk imports
-import { ClerkProvider, SignedIn, SignedOut, RedirectToSignIn, UserButton } from "@clerk/clerk-react";
+import { ClerkProvider } from "@clerk/clerk-react";
 
 // Clerk publishable key - use env variable or fallback to the provided key
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_dG91Y2hpbmctcGhlYXNhbnQtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA";
