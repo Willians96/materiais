@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "convex-generated/api.js";
 import { Id } from "convex-generated/dataModel.js";
 import { useRouter } from "./hooks/useRouter";
@@ -25,27 +25,20 @@ function AppContent() {
   const { user: clerkUser, isSignedIn: clerkSignedIn, isLoaded: clerkLoaded } = useUser();
   const [userId, setUserId] = useState<Id<"users"> | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [needsApproval, setNeedsApproval] = useState(false);
+  const [pendingUserData, setPendingUserData] = useState<{
+    userId: Id<"users">;
+    email: string;
+    name?: string;
+  } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const syncClerkUser = useMutation(api.authCustom.syncClerkUser);
   const currentUser = useQuery(
     api.authCustom.getCurrentSession,
     userId ? { userId } : "skip"
   );
   const { route, navigate } = useRouter();
-
-  // Função para carregar userId do localStorage
-  const loadUserIdFromStorage = () => {
-    const savedUserId = localStorage.getItem("userId");
-    if (savedUserId && savedUserId.trim() !== "") {
-      try {
-        setUserId(savedUserId as Id<"users">);
-        return true;
-      } catch (error) {
-        console.error("UserId inválido:", error);
-        clearLocalStorage();
-        return false;
-      }
-    }
-    return false;
-  };
 
   // Função para limpar localStorage
   const clearLocalStorage = () => {
@@ -55,32 +48,108 @@ function AppContent() {
     localStorage.removeItem("userRole");
     localStorage.removeItem("clerkUserId");
     localStorage.removeItem("needsApproval");
-    setUserId(null);
   };
 
-  // Verificar se há usuário logado no localStorage (inicial)
+  // Sincronizar usuário Clerk → Convex quando Clerk detectar login
   useEffect(() => {
-    loadUserIdFromStorage();
+    if (clerkLoaded && clerkSignedIn && clerkUser && !syncing && !userId) {
+      const syncUser = async () => {
+        setSyncing(true);
+        try {
+          const userEmail = clerkUser.primaryEmailAddress?.emailAddress ||
+                            clerkUser.emailAddresses?.[0]?.emailAddress || "";
+
+          console.log("App.tsx: Sincronizando usuário Clerk:", {
+            clerkUserId: clerkUser.id,
+            email: userEmail
+          });
+
+          const result = await syncClerkUser({
+            clerkUserId: clerkUser.id,
+            email: userEmail,
+            name: clerkUser.fullName || clerkUser.firstName || undefined,
+          });
+
+          if (result) {
+            console.log("App.tsx: Usuário sincronizado:", result);
+
+            // Salvar no localStorage
+            localStorage.setItem("userId", result.userId);
+            localStorage.setItem("userEmail", result.email);
+            localStorage.setItem("userName", result.name || "");
+            localStorage.setItem("userRole", result.role);
+            localStorage.setItem("clerkUserId", clerkUser.id);
+
+            if (!result.approved) {
+              // Usuário pendente de aprovação
+              localStorage.setItem("needsApproval", "true");
+              setNeedsApproval(true);
+              setPendingUserData({
+                userId: result.userId,
+                email: result.email,
+                name: result.name,
+              });
+            } else if (!result.active) {
+              // Usuário inativo
+              localStorage.removeItem("needsApproval");
+              clearLocalStorage();
+              setUserId(null);
+              // Não pode chamar signOut aqui porque causaria loop
+            } else {
+              // Usuário aprovado e ativo - LIBERAR ACESSO
+              localStorage.removeItem("needsApproval");
+              setNeedsApproval(false);
+              setUserId(result.userId);
+            }
+          }
+        } catch (error: any) {
+          console.error("App.tsx: Erro ao sincronizar usuário:", error);
+          clearLocalStorage();
+          setUserId(null);
+        } finally {
+          setSyncing(false);
+        }
+      };
+
+      syncUser();
+    }
+  }, [clerkLoaded, clerkSignedIn, clerkUser, syncing, userId, syncClerkUser]);
+
+  // Verificar localStorage na inicialização (caso usuário já esteja logado)
+  useEffect(() => {
+    const savedUserId = localStorage.getItem("userId");
+    if (savedUserId && savedUserId.trim() !== "") {
+      setUserId(savedUserId as Id<"users">);
+    }
+
+    // Verificar se tem flag de needsApproval
+    if (localStorage.getItem("needsApproval") === "true") {
+      const pendingId = localStorage.getItem("userId");
+      const pendingEmail = localStorage.getItem("userEmail");
+      const pendingName = localStorage.getItem("userName");
+      if (pendingId && pendingEmail) {
+        setNeedsApproval(true);
+        setPendingUserData({
+          userId: pendingId as Id<"users">,
+          email: pendingEmail,
+          name: pendingName || undefined,
+        });
+      }
+    }
+
     setIsInitializing(false);
   }, []);
 
-  // Escutar evento de sincronização completa do LoginPage
-  useEffect(() => {
-    const handleAuthSync = () => {
-      console.log("Evento auth-sync-complete recebido, recarregando userId...");
-      loadUserIdFromStorage();
-    };
-
-    window.addEventListener("auth-sync-complete", handleAuthSync);
-    return () => window.removeEventListener("auth-sync-complete", handleAuthSync);
-  }, []);
-
-  // Limpar localStorage se usuário não foi encontrado (após tentar carregar)
+  // Limpar localStorage se usuário não foi encontrado no Convex
   useEffect(() => {
     if (!isInitializing && userId && currentUser === null) {
       const timeout = setTimeout(() => {
+        console.log("App.tsx: Usuário não encontrado no Convex, limpando...");
         clearLocalStorage();
-      }, 1500);
+        setUserId(null);
+        setNeedsApproval(false);
+        setPendingUserData(null);
+      }, 2000);
 
       return () => clearTimeout(timeout);
     }
@@ -89,13 +158,31 @@ function AppContent() {
   // Se o usuário fez logout no Clerk, limpar tudo
   useEffect(() => {
     if (clerkLoaded && !clerkSignedIn && userId) {
+      console.log("App.tsx: Clerk detectou logout, limpando...");
       clearLocalStorage();
+      setUserId(null);
+      setNeedsApproval(false);
+      setPendingUserData(null);
     }
   }, [clerkLoaded, clerkSignedIn, userId]);
 
-  // Se ainda está inicializando, mostrar loading
-  if (isInitializing) {
-    return <div className="flex items-center justify-center h-screen">Carregando...</div>;
+  // Se ainda está inicializando ou sincronizando, mostrar loading
+  if (isInitializing || syncing) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">
+            {syncing ? "Sincronizando com o sistema..." : "Carregando..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Se o usuário precisa de aprovação, mostrar página de solicitação
+  if (needsApproval && pendingUserData) {
+    return <RequestAccessPage user={pendingUserData} />;
   }
 
   // Se não há usuário logado, mostrar página de login
@@ -105,28 +192,26 @@ function AppContent() {
 
   // Se está carregando dados do usuário, mostrar loading
   if (userId && currentUser === undefined) {
-    return <div className="flex items-center justify-center h-screen">Carregando...</div>;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">Validando sessão...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Se o usuário não foi encontrado ou não há currentUser válido
+  // Se o usuário não foi encontrado
   if (!currentUser) {
-    const needsApproval = localStorage.getItem("needsApproval") === "true";
-    const pendingUserId = localStorage.getItem("userId");
-    const pendingEmail = localStorage.getItem("userEmail");
-
-    if (needsApproval && pendingUserId && pendingEmail) {
-      return (
-        <RequestAccessPage
-          user={{
-            _id: pendingUserId as Id<"users">,
-            email: pendingEmail,
-            name: localStorage.getItem("userName") || undefined,
-          }}
-        />
-      );
-    }
-
-    return <LoginPage />;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verificando credenciais...</p>
+        </div>
+      </div>
+    );
   }
 
   // Criar objeto user compatível com os componentes

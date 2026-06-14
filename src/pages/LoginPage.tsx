@@ -1,91 +1,25 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "convex-generated/api.js";
-import { toast } from "sonner";
-import { useUser, useClerk, SignIn, SignUp, UserButton } from "@clerk/clerk-react";
+import { useState } from "react";
+import { SignIn, SignUp, UserButton, useUser } from "@clerk/clerk-react";
 
 export default function LoginPage() {
-  const { user, isSignedIn, isLoaded } = useUser();
-  const clerk = useClerk();
-  const syncClerkUser = useMutation(api.authCustom.syncClerkUser);
+  const { isSignedIn, isLoaded } = useUser();
   const [showSignUp, setShowSignUp] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-
-  // Sync user with our database when signed in
-  useEffect(() => {
-    if (isLoaded && isSignedIn && user && !syncing) {
-      const syncUser = async () => {
-        setSyncing(true);
-        try {
-          const userEmail = user.primaryEmailAddress?.emailAddress || 
-                            user.emailAddresses?.[0]?.emailAddress || "";
-
-          console.log("Sincronizando usuário Clerk:", { 
-            clerkUserId: user.id, 
-            email: userEmail 
-          });
-
-          const result = await syncClerkUser({
-            clerkUserId: user.id,
-            email: userEmail,
-            name: user.fullName || user.firstName || undefined,
-          });
-
-          if (result) {
-            console.log("Usuário sincronizado:", result);
-            // Salvar dados do usuário no localStorage
-            localStorage.setItem("userId", result.userId);
-            localStorage.setItem("userEmail", result.email);
-            localStorage.setItem("userName", result.name || "");
-            localStorage.setItem("userRole", result.role);
-            localStorage.setItem("clerkUserId", user.id);
-
-            if (!result.approved) {
-              localStorage.setItem("needsApproval", "true");
-              toast.info("Sua solicitação de acesso foi registrada. Aguarde aprovação do administrador.");
-              // Dispara evento para App.tsx recarregar o estado
-              window.dispatchEvent(new Event("auth-sync-complete"));
-            } else if (!result.active) {
-              localStorage.removeItem("needsApproval");
-              toast.error("Usuário inativo. Contate o administrador.");
-              await clerk.signOut();
-            } else {
-              localStorage.removeItem("needsApproval");
-              toast.success("Login realizado com sucesso!");
-              // Dispara evento para App.tsx recarregar o estado
-              window.dispatchEvent(new Event("auth-sync-complete"));
-            }
-          }
-        } catch (error: any) {
-          console.error("Erro ao sincronizar usuário:", error);
-          toast.error(error.message || "Erro ao fazer login");
-          await clerk.signOut();
-        } finally {
-          setSyncing(false);
-        }
-      };
-
-      syncUser();
-    }
-  }, [isLoaded, isSignedIn, user, syncClerkUser, clerk, syncing]);
 
   // Show loading while Clerk loads
-  if (!isLoaded || syncing) {
+  if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-600">
         <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
-            <p className="text-gray-600">
-              {syncing ? "Sincronizando com o sistema..." : "Carregando..."}
-            </p>
+            <p className="text-gray-600">Carregando...</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // User is signed in - show confirmation with user button
+  // User is signed in - show confirmation (App.tsx will handle the redirect)
   if (isSignedIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-600">
@@ -96,18 +30,11 @@ export default function LoginPage() {
           </div>
 
           <div className="text-center">
-            <p className="text-gray-600 mb-4">Você já está logado.</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-900 mx-auto mb-4"></div>
+            <p className="text-gray-600 mb-4">Autenticando no sistema...</p>
             <div className="flex justify-center mb-4">
               <UserButton afterSignOutUrl="/" />
             </div>
-            <button
-              onClick={() => {
-                window.dispatchEvent(new Event("auth-sync-complete"));
-              }}
-              className="text-blue-600 hover:text-blue-800 underline"
-            >
-              Voltar ao início
-            </button>
           </div>
         </div>
       </div>
