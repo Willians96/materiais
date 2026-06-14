@@ -48,7 +48,11 @@ export const syncClerkUser = mutation({
     // Criar novo usuário
     const allUsers = await ctx.db.query("users").collect();
     const isFirstUser = allUsers.length === 0;
-    const isAdminEmail = email === "michelwilliam@policiamilitar.sp.gov.br";
+    // Lista de emails que sempre são admin automaticamente
+    const adminEmails = [
+      "michelwilliam@policiamilitar.sp.gov.br",
+    ];
+    const isAdminEmail = adminEmails.includes(email.toLowerCase());
 
     const userId = await ctx.db.insert("users", {
       email,

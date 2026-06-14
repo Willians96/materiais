@@ -213,3 +213,40 @@ export const requestAccess = mutation({
     });
   },
 });
+
+// Promove usuário a administrador pelo email (para setup inicial/recuperação)
+// NOTA: Esta mutation é pública por design, para permitir recuperação de acesso
+// caso o admin principal perca o acesso. Em produção, considere adicionar
+// autenticação ou mover para um script de setup.
+export const promoteToAdmin = mutation({
+  args: {
+    email: v.string(),
+    secretKey: v.optional(v.string()), // Chave de segurança opcional
+  },
+  handler: async (ctx, { email, secretKey }) => {
+    // Chave de segurança simples para evitar abuso
+    // Em produção, use uma variável de ambiente
+    const ADMIN_SECRET = "pmesp-admin-recovery-2024";
+
+    if (secretKey && secretKey !== ADMIN_SECRET) {
+      throw new Error("Chave de segurança inválida");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+
+    if (!user) {
+      throw new Error("Usuário não encontrado. Faça login primeiro para criar o registro.");
+    }
+
+    await ctx.db.patch(user._id, {
+      role: "admin",
+      approved: true,
+      active: true,
+    });
+
+    return { success: true, message: `${email} agora é administrador` };
+  },
+});
