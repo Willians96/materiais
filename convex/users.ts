@@ -84,11 +84,13 @@ export const createFromAuth = mutation({
 });
 
 export const approve = mutation({
-  args: { 
+  args: {
     userId: v.id("users"),
     currentUserId: v.id("users"),
+    unit: v.optional(v.id("units")),
+    role: v.optional(v.union(v.literal("admin"), v.literal("user"))),
   },
-  handler: async (ctx, { userId, currentUserId }) => {
+  handler: async (ctx, { userId, currentUserId, unit, role }) => {
     // Validar que o usuário atual está autenticado
     if (!currentUserId) {
       throw new Error("Não autenticado");
@@ -120,13 +122,35 @@ export const approve = mutation({
     }
 
     // Aprovar o usuário
-    await ctx.db.patch(userId, {
+    const updates: any = {
       approved: true,
       active: true,
-    });
+    };
 
-    // Retornar confirmação
-    return { success: true, message: "Usuário aprovado com sucesso" };
+    // Se admin atribuiu uma unidade, salvar
+    if (unit) {
+      updates.unit = unit;
+    }
+
+    // Se admin definiu um papel, salvar
+    if (role) {
+      updates.role = role;
+    }
+
+    // Se usuário não tem senha, gerar uma temporária
+    if (!userToApprove.password) {
+      const tempPassword = Math.random().toString(36).slice(-8);
+      updates.password = tempPassword;
+    }
+
+    await ctx.db.patch(userId, updates);
+
+    // Retornar confirmação (incluindo senha temporária se gerada)
+    return {
+      success: true,
+      message: "Usuário aprovado com sucesso",
+      tempPassword: !userToApprove.password ? updates.password : undefined,
+    };
   },
 });
 
@@ -189,28 +213,33 @@ export const toggleActive = mutation({
 export const requestAccess = mutation({
   args: {
     email: v.string(),
-    name: v.optional(v.string()),
+    name: v.string(),
+    password: v.string(),
     unit: v.optional(v.id("units")),
   },
-  handler: async (ctx, { email, name, unit }) => {
+  handler: async (ctx, { email, name, password, unit }) => {
     const existing = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", email))
       .first();
 
     if (existing) {
-      throw new Error("Usuário já existe");
+      throw new Error("Já existe uma solicitação com este email");
     }
 
     await ctx.db.insert("users", {
       email,
-      name: name || email.split("@")[0],
+      name,
+      password, // Em produção, usar hash bcrypt
       role: "user",
       unit,
       approved: false,
       active: false,
       createdAt: Date.now(),
+      loginCount: 0,
     });
+
+    return { success: true, message: "Solicitação enviada! Aguarde aprovação do administrador." };
   },
 });
 

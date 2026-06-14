@@ -10,11 +10,8 @@ if (!convexUrl) {
   throw new Error("VITE_CONVEX_URL não configurado. Execute 'npx convex dev' primeiro.")
 }
 
-// Configurar cliente Convex com opções de reconexão
 const convex = new ConvexReactClient(convexUrl, {
-  // Reconectar automaticamente em caso de desconexão
   unsavedChangesWarning: false,
-  // Timeout aumentado para conexões lentas
   webSocketConstructor: typeof WebSocket !== 'undefined' ? WebSocket : undefined,
 })
 
@@ -26,4 +23,3 @@ createRoot(document.getElementById('root')!).render(
     </ConvexProvider>
   </StrictMode>,
 )
-

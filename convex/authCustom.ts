@@ -1,40 +1,89 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-// Clerk authentication integration
-// Uses Clerk for auth, but keeps approval workflow in our database
+// Autenticação simples por email e senha (como no sistema original)
+// Senhas armazenadas em texto plano para simplicidade - em produção usar bcrypt
 
-/**
- * Sync Clerk user to our database.
- * This is called after Clerk authentication succeeds.
- * Creates user record if doesn't exist (with approved=false for new users).
- */
+export const login = mutation({
+  args: {
+    email: v.string(),
+    password: v.string(),
+  },
+  handler: async (ctx, { email, password }) => {
+    // Buscar usuário por email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+
+    if (!user) {
+      throw new Error("Email ou senha inválidos");
+    }
+
+    if (!user.approved) {
+      throw new Error("Sua solicitação de acesso ainda não foi aprovada. Aguarde o administrador.");
+    }
+
+    if (!user.active) {
+      throw new Error("Usuário inativo. Contate o administrador.");
+    }
+
+    // Verificar senha (em produção, usar hash bcrypt)
+    if (user.password !== password) {
+      throw new Error("Email ou senha inválidos");
+    }
+
+    // Atualizar lastLogin e loginCount
+    await ctx.db.patch(user._id, {
+      lastLogin: Date.now(),
+      loginCount: (user.loginCount || 0) + 1,
+    });
+
+    return {
+      userId: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+  },
+});
+
+export const getCurrentSession = query({
+  args: {
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, { userId }) => {
+    if (!userId) return null;
+
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+
+    if (!user.active || !user.approved) return null;
+
+    return {
+      userId: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      unit: user.unit,
+    };
+  },
+});
+
+// Manter syncClerkUser para compatibilidade, mas não criar usuário automaticamente
 export const syncClerkUser = mutation({
   args: {
     clerkUserId: v.string(),
     email: v.string(),
     name: v.optional(v.string()),
   },
-  handler: async (ctx, { clerkUserId, email, name }) => {
-    // Buscar usuário por clerkUserId ou email
-    let user = await ctx.db
+  handler: async (ctx, { email }) => {
+    const user = await ctx.db
       .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
+      .withIndex("by_email", (q) => q.eq("email", email))
       .first();
 
-    // Se não encontrou por clerkUserId, tentar por email
-    if (!user) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", email))
-        .first();
-    }
-
-    // Se usuário existe, apenas atualizar clerkUserId se necessário
     if (user) {
-      if (user.clerkUserId !== clerkUserId) {
-        await ctx.db.patch(user._id, { clerkUserId });
-      }
       return {
         userId: user._id,
         email: user.email,
@@ -45,97 +94,6 @@ export const syncClerkUser = mutation({
       };
     }
 
-    // Criar novo usuário
-    const allUsers = await ctx.db.query("users").collect();
-    const isFirstUser = allUsers.length === 0;
-    // Lista de emails que sempre são admin (super admin) automaticamente
-    const superAdminEmails = [
-      "michelwilliam@policiamilitar.sp.gov.br",
-      "michel.wmoraes@gmail.com",
-    ];
-    const isSuperAdmin = superAdminEmails.includes(email.toLowerCase());
-
-    const userId = await ctx.db.insert("users", {
-      email,
-      name: name || email.split("@")[0],
-      clerkUserId,
-      role: (isFirstUser || isSuperAdmin) ? "admin" : "user",
-      approved: (isFirstUser || isSuperAdmin), // Super admin já aprovado
-      active: (isFirstUser || isSuperAdmin),
-      createdAt: Date.now(),
-    });
-
-    const newUser = await ctx.db.get(userId);
-    if (!newUser) throw new Error("Erro ao criar usuário");
-
-    return {
-      userId: newUser._id,
-      email: newUser.email,
-      name: newUser.name,
-      role: newUser.role,
-      approved: newUser.approved,
-      active: newUser.active,
-    };
-  },
-});
-
-/**
- * Get current session by Convex user ID.
- * Verifies user is approved and active.
- */
-export const getCurrentSession = query({
-  args: {
-    userId: v.optional(v.id("users")),
-  },
-  handler: async (ctx, { userId }) => {
-    try {
-      if (!userId) return null;
-
-      const user = await ctx.db.get(userId);
-      if (!user) {
-        return null;
-      }
-
-      if (!user.active || !user.approved) {
-        return null;
-      }
-
-      return {
-        userId: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        clerkUserId: user.clerkUserId,
-      };
-    } catch (error) {
-      console.error("Erro em getCurrentSession:", error);
-      return null;
-    }
-  },
-});
-
-/**
- * Get user by Clerk user ID (for frontend Clerk integration).
- */
-export const getUserByClerkId = query({
-  args: {
-    clerkUserId: v.string(),
-  },
-  handler: async (ctx, { clerkUserId }) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkUserId", (q) => q.eq("clerkUserId", clerkUserId))
-      .first();
-
-    if (!user) return null;
-
-    return {
-      userId: user._id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      approved: user.approved,
-      active: user.active,
-    };
+    return null;
   },
 });

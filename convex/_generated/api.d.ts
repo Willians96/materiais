@@ -15,6 +15,7 @@ import type * as authHelper from "../authHelper.js";
 import type * as categories from "../categories.js";
 import type * as http from "../http.js";
 import type * as materials from "../materials.js";
+import type * as seed from "../seed.js";
 import type * as units from "../units.js";
 import type * as users from "../users.js";
 
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   http: typeof http;
   materials: typeof materials;
+  seed: typeof seed;
   units: typeof units;
   users: typeof users;
 }>;
