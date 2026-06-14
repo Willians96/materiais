@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { saveAuditLog } from "./audit";
 
 export const list = query({
   args: {
@@ -53,7 +52,7 @@ export const list = query({
 });
 
 export const get = query({
-  args: { 
+  args: {
     id: v.id("materials"),
     userId: v.optional(v.id("users")),
   },
@@ -94,7 +93,7 @@ export const create = mutation({
     observacoes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, observacoes, ...materialData } = args;
+    const { userId, ...materialData } = args;
     if (!userId) throw new Error("Não autenticado");
 
     const user = await ctx.db.get(userId);
@@ -118,16 +117,6 @@ export const create = mutation({
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
-      observacoes: observacoes ?? undefined,
-    });
-
-    await saveAuditLog(ctx, {
-      acao: "create",
-      tabela: "materials",
-      registroId: materialId,
-      dadosAnteriores: undefined,
-      dadosNovos: { ...materialData, createdBy: userId, createdAt: now, updatedAt: now },
-      usuarioId: userId,
     });
 
     return materialId;
@@ -170,7 +159,7 @@ export const update = mutation({
 
     // Verificar patrimônio duplicado se estiver sendo alterado
     if (args.patrimonio && args.patrimonio !== material.patrimonio) {
-      const patrimonio = args.patrimonio; // Garantir que não é undefined
+      const patrimonio = args.patrimonio;
       const existing = await ctx.db
         .query("materials")
         .withIndex("by_patrimonio", (q) => q.eq("patrimonio", patrimonio))
@@ -181,28 +170,17 @@ export const update = mutation({
       }
     }
 
-    const dadosAnteriores = { ...material };
     const now = Date.now();
-
     await ctx.db.patch(id, {
       ...updates,
       updatedAt: now,
       updatedBy: userId,
     });
-
-    await saveAuditLog(ctx, {
-      acao: "update",
-      tabela: "materials",
-      registroId: id,
-      dadosAnteriores,
-      dadosNovos: { ...material, ...updates, updatedAt: now, updatedBy: userId },
-      usuarioId: userId,
-    });
   },
 });
 
 export const remove = mutation({
-  args: { 
+  args: {
     id: v.id("materials"),
     userId: v.id("users"),
   },
@@ -222,22 +200,12 @@ export const remove = mutation({
       throw new Error("Você só pode deletar seus próprios materiais");
     }
 
-    const dadosAnteriores = { ...material };
     await ctx.db.delete(id);
-
-    await saveAuditLog(ctx, {
-      acao: "delete",
-      tabela: "materials",
-      registroId: id,
-      dadosAnteriores,
-      dadosNovos: undefined,
-      usuarioId: userId,
-    });
   },
 });
 
 export const removeBatch = mutation({
-  args: { 
+  args: {
     ids: v.array(v.id("materials")),
     userId: v.id("users"),
   },
@@ -258,17 +226,7 @@ export const removeBatch = mutation({
         continue;
       }
 
-      const dadosAnteriores = { ...material };
       await ctx.db.delete(id);
-
-      await saveAuditLog(ctx, {
-        acao: "delete",
-        tabela: "materials",
-        registroId: id,
-        dadosAnteriores,
-        dadosNovos: undefined,
-        usuarioId: userId,
-      });
     }
   },
 });
