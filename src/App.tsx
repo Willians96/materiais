@@ -27,7 +27,7 @@ function AppContent() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [pendingUserData, setPendingUserData] = useState<{
-    userId: Id<"users">;
+    _id: Id<"users">;
     email: string;
     name?: string;
   } | null>(null);
@@ -85,7 +85,7 @@ function AppContent() {
               localStorage.setItem("needsApproval", "true");
               setNeedsApproval(true);
               setPendingUserData({
-                userId: result.userId,
+                _id: result.userId,
                 email: result.email,
                 name: result.name,
               });
@@ -130,7 +130,7 @@ function AppContent() {
       if (pendingId && pendingEmail) {
         setNeedsApproval(true);
         setPendingUserData({
-          userId: pendingId as Id<"users">,
+          _id: pendingId as Id<"users">,
           email: pendingEmail,
           name: pendingName || undefined,
         });
