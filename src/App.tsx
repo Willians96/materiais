@@ -16,12 +16,13 @@ import ExportPage from "./pages/ExportPage";
 import MovimentacoesPage from "./pages/MovimentacoesPage";
 
 // Clerk imports
-import { ClerkProvider } from "@clerk/clerk-react";
+import { ClerkProvider, useUser } from "@clerk/clerk-react";
 
 // Clerk publishable key - use env variable or fallback to the provided key
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_dG91Y2hpbmctcGhlYXNhbnQtNDkuY2xlcmsuYWNjb3VudHMuZGV2JA";
 
 function AppContent() {
+  const { user: clerkUser, isSignedIn: clerkSignedIn, isLoaded: clerkLoaded } = useUser();
   const [userId, setUserId] = useState<Id<"users"> | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const currentUser = useQuery(
@@ -30,47 +31,67 @@ function AppContent() {
   );
   const { route, navigate } = useRouter();
 
-  // Verificar se há usuário logado no localStorage
-  useEffect(() => {
+  // Função para carregar userId do localStorage
+  const loadUserIdFromStorage = () => {
     const savedUserId = localStorage.getItem("userId");
     if (savedUserId && savedUserId.trim() !== "") {
       try {
-        if (savedUserId.length > 0) {
-          setUserId(savedUserId as Id<"users">);
-        } else {
-          localStorage.removeItem("userId");
-          localStorage.removeItem("userEmail");
-          localStorage.removeItem("userName");
-          localStorage.removeItem("userRole");
-          localStorage.removeItem("clerkUserId");
-        }
+        setUserId(savedUserId as Id<"users">);
+        return true;
       } catch (error) {
         console.error("UserId inválido:", error);
-        localStorage.removeItem("userId");
-        localStorage.removeItem("userEmail");
-        localStorage.removeItem("userName");
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("clerkUserId");
+        clearLocalStorage();
+        return false;
       }
     }
+    return false;
+  };
+
+  // Função para limpar localStorage
+  const clearLocalStorage = () => {
+    localStorage.removeItem("userId");
+    localStorage.removeItem("userEmail");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("clerkUserId");
+    localStorage.removeItem("needsApproval");
+    setUserId(null);
+  };
+
+  // Verificar se há usuário logado no localStorage (inicial)
+  useEffect(() => {
+    loadUserIdFromStorage();
     setIsInitializing(false);
+  }, []);
+
+  // Escutar evento de sincronização completa do LoginPage
+  useEffect(() => {
+    const handleAuthSync = () => {
+      console.log("Evento auth-sync-complete recebido, recarregando userId...");
+      loadUserIdFromStorage();
+    };
+
+    window.addEventListener("auth-sync-complete", handleAuthSync);
+    return () => window.removeEventListener("auth-sync-complete", handleAuthSync);
   }, []);
 
   // Limpar localStorage se usuário não foi encontrado (após tentar carregar)
   useEffect(() => {
     if (!isInitializing && userId && currentUser === null) {
       const timeout = setTimeout(() => {
-        localStorage.removeItem("userId");
-        localStorage.removeItem("userEmail");
-        localStorage.removeItem("userName");
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("clerkUserId");
-        setUserId(null);
-      }, 1000);
+        clearLocalStorage();
+      }, 1500);
 
       return () => clearTimeout(timeout);
     }
   }, [userId, currentUser, isInitializing]);
+
+  // Se o usuário fez logout no Clerk, limpar tudo
+  useEffect(() => {
+    if (clerkLoaded && !clerkSignedIn && userId) {
+      clearLocalStorage();
+    }
+  }, [clerkLoaded, clerkSignedIn, userId]);
 
   // Se ainda está inicializando, mostrar loading
   if (isInitializing) {

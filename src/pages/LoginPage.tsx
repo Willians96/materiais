@@ -9,19 +9,30 @@ export default function LoginPage() {
   const clerk = useClerk();
   const syncClerkUser = useMutation(api.authCustom.syncClerkUser);
   const [showSignUp, setShowSignUp] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   // Sync user with our database when signed in
   useEffect(() => {
-    if (isLoaded && isSignedIn && user) {
+    if (isLoaded && isSignedIn && user && !syncing) {
       const syncUser = async () => {
+        setSyncing(true);
         try {
+          const userEmail = user.primaryEmailAddress?.emailAddress || 
+                            user.emailAddresses?.[0]?.emailAddress || "";
+
+          console.log("Sincronizando usuário Clerk:", { 
+            clerkUserId: user.id, 
+            email: userEmail 
+          });
+
           const result = await syncClerkUser({
             clerkUserId: user.id,
-            email: user.primaryEmailAddress?.emailAddress || "",
-            name: user.fullName || undefined,
+            email: userEmail,
+            name: user.fullName || user.firstName || undefined,
           });
 
           if (result) {
+            console.log("Usuário sincronizado:", result);
             // Salvar dados do usuário no localStorage
             localStorage.setItem("userId", result.userId);
             localStorage.setItem("userEmail", result.email);
@@ -32,36 +43,42 @@ export default function LoginPage() {
             if (!result.approved) {
               localStorage.setItem("needsApproval", "true");
               toast.info("Sua solicitação de acesso foi registrada. Aguarde aprovação do administrador.");
-              window.location.href = "/";
+              // Dispara evento para App.tsx recarregar o estado
+              window.dispatchEvent(new Event("auth-sync-complete"));
             } else if (!result.active) {
               localStorage.removeItem("needsApproval");
               toast.error("Usuário inativo. Contate o administrador.");
-              clerk.signOut();
+              await clerk.signOut();
             } else {
               localStorage.removeItem("needsApproval");
               toast.success("Login realizado com sucesso!");
-              window.location.href = "/";
+              // Dispara evento para App.tsx recarregar o estado
+              window.dispatchEvent(new Event("auth-sync-complete"));
             }
           }
         } catch (error: any) {
           console.error("Erro ao sincronizar usuário:", error);
           toast.error(error.message || "Erro ao fazer login");
-          clerk.signOut();
+          await clerk.signOut();
+        } finally {
+          setSyncing(false);
         }
       };
 
       syncUser();
     }
-  }, [isLoaded, isSignedIn, user, syncClerkUser, clerk]);
+  }, [isLoaded, isSignedIn, user, syncClerkUser, clerk, syncing]);
 
   // Show loading while Clerk loads
-  if (!isLoaded) {
+  if (!isLoaded || syncing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-blue-600">
         <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-900 mx-auto mb-4"></div>
-            <p className="text-gray-600">Carregando...</p>
+            <p className="text-gray-600">
+              {syncing ? "Sincronizando com o sistema..." : "Carregando..."}
+            </p>
           </div>
         </div>
       </div>
@@ -84,7 +101,9 @@ export default function LoginPage() {
               <UserButton afterSignOutUrl="/" />
             </div>
             <button
-              onClick={() => window.location.href = "/"}
+              onClick={() => {
+                window.dispatchEvent(new Event("auth-sync-complete"));
+              }}
               className="text-blue-600 hover:text-blue-800 underline"
             >
               Voltar ao início

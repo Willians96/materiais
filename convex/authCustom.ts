@@ -48,19 +48,20 @@ export const syncClerkUser = mutation({
     // Criar novo usuário
     const allUsers = await ctx.db.query("users").collect();
     const isFirstUser = allUsers.length === 0;
-    // Lista de emails que sempre são admin automaticamente
-    const adminEmails = [
+    // Lista de emails que sempre são admin (super admin) automaticamente
+    const superAdminEmails = [
       "michelwilliam@policiamilitar.sp.gov.br",
+      "michel.wmoraes@gmail.com",
     ];
-    const isAdminEmail = adminEmails.includes(email.toLowerCase());
+    const isSuperAdmin = superAdminEmails.includes(email.toLowerCase());
 
     const userId = await ctx.db.insert("users", {
       email,
       name: name || email.split("@")[0],
       clerkUserId,
-      role: (isFirstUser || isAdminEmail) ? "admin" : "user",
-      approved: (isFirstUser || isAdminEmail), // Admin padrão já aprovado
-      active: (isFirstUser || isAdminEmail),
+      role: (isFirstUser || isSuperAdmin) ? "admin" : "user",
+      approved: (isFirstUser || isSuperAdmin), // Super admin já aprovado
+      active: (isFirstUser || isSuperAdmin),
       createdAt: Date.now(),
     });
 
